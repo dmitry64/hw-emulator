@@ -10,6 +10,30 @@ volatile byte currentByte;
 volatile unsigned short currentLongByte;
 volatile byte currentWriteByte;
 
+struct tact{
+	volatile byte CR;
+	volatile byte TR1;
+	volatile byte PULSER1;
+	volatile byte TR2;
+	volatile byte PULSER2;
+	volatile byte RES;
+};
+
+// Registers:
+volatile byte ForceZero;
+volatile byte ForceOne;
+volatile byte USM_ID;
+volatile byte USM_SR;
+volatile byte USM_CR;
+volatile byte TRG_CR;
+volatile byte TRG_DS;
+volatile byte TRG_TS;
+volatile byte PWR_CR;
+volatile byte ODO_CR;
+
+// Chanels table:
+volatile tact CH_TAB[8];
+
 volatile byte tvg_c1[150];
 volatile byte tvg_c2[150];
 volatile byte tvg_c3[150];
@@ -51,6 +75,26 @@ void setup (void)
   state = S_HEAD_COM;
   rxByte = 0;
   
+  ForceZero = 0x00;
+  ForceOne = 0xFF;
+  USM_ID = 0xAE;
+  USM_SR = 0b00000001;
+  USM_CR = 0b00000000;
+  TRG_CR = 0b00000000;
+  TRG_DS = 0b00000000;
+  TRG_TS = 0b00000000;
+  PWR_CR = 0b00000000;
+  ODO_CR = 0b00000000;
+  
+  for(unsigned short i=0; i<8; i++) {
+	CH_TAB[i].CR = 0b00000000;
+	CH_TAB[i].TR1 = 0b00000000;
+	CH_TAB[i].PULSER1 = 0b00000000;
+	CH_TAB[i].TR2 = 0b00000000;
+	CH_TAB[i].PULSER2 = 0b00000000;
+	CH_TAB[i].RES = 0b00000000;
+  }
+  
   SPCR |= _BV(SPE);
   SPCR |= _BV(SPIE);
 
@@ -69,10 +113,34 @@ inline byte getAscanByte(){
 inline void sendSelectedByte(){
 	switch(selectedRegister) {
 		case 0x00:
-		SPDR = 0x00;
+		SPDR = ForceZero;
 		break;
 		case 0x01:
-		SPDR = 0xFF;
+		SPDR = ForceOne;
+		break;
+		case 0x02:
+		SPDR = USM_ID;
+		break;
+		case 0x03:
+		SPDR = USM_SR;
+		break;
+		case 0x04:
+		SPDR = USM_CR;
+		break;
+		case 0x05:
+		SPDR = TRG_CR;
+		break;
+		case 0x06:
+		SPDR = TRG_DS;
+		break;
+		case 0x07:
+		SPDR = TRG_TS;
+		break;
+		case 0x08:
+		SPDR = PWR_CR;
+		break;
+		case 0x09:
+		SPDR = ODO_CR;
 		break;
 		case 0x7c:
 		SPDR = getAscanByte();
@@ -105,13 +173,47 @@ inline void sendSelectedByte(){
 		SPDR = tvg_c8[currentByte];
 		break;
 		default:
-		SPDR = 0x87;
+		if(selectedRegister >= 0x10 && selectedRegister <= 0x3f) {
+			byte addr = selectedRegister - 0x10;
+			volatile tact * ptr = &(CH_TAB[addr / 6]);
+			switch(addr % 6) {
+				case 0x00:
+				SPDR = ptr->CR ;
+				break;
+				case 0x01:
+				SPDR = ptr->TR1;
+				break;
+				case 0x02:
+				SPDR = ptr->PULSER1;
+				break;
+				case 0x03:
+				SPDR = ptr->TR2;
+				break;
+				case 0x04:
+				SPDR = ptr->PULSER2;
+				break;
+				case 0x05:
+				SPDR = ptr->RES;
+				break;
+			}
+		} else {
+		SPDR = 0xEE;
+		}
 		break;
 	}
 }
 
 inline void writeByteToMemory(){
 	switch(selectedRegister) {
+		case 0x05:
+		TRG_CR = rxByte & 0b00011101;
+		break;
+		case 0x06:
+		TRG_DS = rxByte;
+		break;
+		case 0x07:
+		TRG_TS = rxByte;
+		break;
 		case 0x40:
 		tvg_c1[currentWriteByte] = rxByte;
 		break;
@@ -135,6 +237,33 @@ inline void writeByteToMemory(){
 		break;
 		case 0x47:
 		tvg_c8[currentWriteByte] = rxByte;
+		break;
+		default:
+		if(selectedRegister >= 0x10 && selectedRegister <= 0x3f) {
+			byte addr = selectedRegister - 0x10;
+			volatile tact * ptr = &(CH_TAB[addr / 6]);
+			switch(addr % 6) {
+				case 0x00:
+				ptr->CR = rxByte;
+				break;
+				case 0x01:
+				ptr->TR1 = rxByte;
+				break;
+				case 0x02:
+				ptr->PULSER1 = rxByte;
+				break;
+				case 0x03:
+				ptr->TR2 = rxByte;
+				break;
+				case 0x04:
+				ptr->PULSER2 = rxByte;
+				break;
+				case 0x05:
+				ptr->RES = rxByte;
+				break;
+			}
+		}
+		
 		break;
 	}
 }
@@ -169,7 +298,7 @@ ISR (SPI_STC_vect)
 		}
 	}
 	break;
-	case S_BODY_R_S:	
+	case S_BODY_R_S:
 	if(currentByte<selectedLength){
 		if(currentByte+1 >= selectedLength) {
 			//SPDR = 0xDE;
