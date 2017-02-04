@@ -6,49 +6,75 @@ volatile byte state;
 volatile byte selectedRegister;
 volatile byte selectedLength;
 volatile byte currentByte;
+volatile unsigned short currentLongByte;
 
-void ss_falling ()
+void ss_rising ()
 {
-  if(state==2)
-	state = 0;
+	cli();
+  //if(state == 33) {
+		//SPDR = 0xBE;
+		//selectedLength = 0;
+		//selectedRegister = 0;
+		//currentByte = 0;
+	//state = (state==3) ? 0 : state;
+	//}
+	//if(state == 34) {
+	//	state = 33;
+	//}
+	
+	if(state == 3)
+	if( currentLongByte > 255 ) {
+		state = 0;
+		currentLongByte = 0;
+	}
+	sei();
 }
 
 void setup (void)
 {
-  Serial.begin (115200);   // debugging
+  //Serial.begin (115200);   // debugging
 
   // have to send on master in, *slave out*
   pinMode(MISO, OUTPUT);
-  pinMode(9, INPUT);
+  //pinMode(9, INPUT);
  
   /*DDRB  |= 0b00010000; 
    //The Port B 
   PORTB |= 0b00000100*/
   
 //SPI Control Register
-  SPCR  |= 0b11000000;
+ // SPCR  |= 0b11000000;
 //SPI status register
-  SPSR  |= 0b00000000;
-  SPDR = 0x99;
+ // SPSR  |= 0b00000000;
+ // SPDR = 0x99;
+ 
+
   
   //SPDR = 0x00;
   currentByte = 0;
+  currentLongByte = 0;
   selectedLength = 0;
   selectedRegister = 0;
   state = 0;
   rxByte = 0;
-  attachInterrupt (0, ss_falling, FALLING);
+  
+   SPCR |= _BV(SPE);
+
+  
+  // turn on interrupts
+  SPCR |= _BV(SPIE);
+  attachInterrupt (1, ss_rising, RISING);
   //SPI.setDataMode(SPI_MODE0);
 
  
-  sei();
+ // sei();
 
 }  // end of setup
 
-void sendSelectedByte(){
+inline void sendSelectedByte(){
 	switch(selectedRegister) {
 		case 0x00:
-		SPDR = 0x08;
+		SPDR = 0x09;
 		break;
 		case 0x01:
 		SPDR = 0xFF;
@@ -68,13 +94,12 @@ void sendSelectedByte(){
 	//}
 }
 
-
 // SPI interrupt routine
 ISR (SPI_STC_vect)
 {
-  //cli();
+  cli();
   rxByte = SPDR;
-  //SPDR = 0x09;
+
   switch(state) {
 	case 0:
 	selectedRegister = rxByte;
@@ -83,19 +108,16 @@ ISR (SPI_STC_vect)
 	break;
 	case 1:
 	selectedLength = rxByte;
-	/*if(selectedLength == 255) {
+	if(selectedLength == 0xff) {
 		state = 3;
-	} else {*/
-	state = 2;
-	//}
-	currentByte = 1;
-	//SPDR = 0x91;
-	sendSelectedByte();
+		SPDR = 0xC3;
+	} else {
+		state = 2;
+		currentByte = 1;
+		sendSelectedByte();
+	}
 	break;
-	case 2:
-	
-	
-	
+	case 2:	
 	if(currentByte<selectedLength){
 		if(currentByte+1 >= selectedLength) {
 			SPDR = 0xDE;
@@ -103,36 +125,28 @@ ISR (SPI_STC_vect)
 		else {
 			sendSelectedByte();
 		}
-		//SPDR = 0x96;
 		currentByte++;
 	} else {
 		SPDR = 0xAC;
-		selectedLength = 0;
-		selectedRegister = 0;
 		currentByte = 0;
 		state = 0;
 	}
 	
-		//sendSelectedByte();
-		//state = 0;
-	//}
 	break;
-	/*case 3:
-	if(rxByte == 0x00) {
-		sendSelectedByte();
-	} else {
-		selectedRegister = rxByte;
-		state = 1;
-		currentByte = 0;
-		SPDR = 0x07;
-	}
-	//SPDR = 0x66;
+	case 3:
+		SPDR = currentLongByte;
+		currentLongByte++;
+	break;
+	/*
+	case 5:
+		SPDR = 0xEE;
+		state = 0;
+		currentLongByte = 0;
 	break;*/
 	
 	
 	default:
-	state = 0;
-	SPDR = 0x99;
+	SPDR = 0xCC;
 	break;
   }
   //delay(1);
@@ -154,7 +168,7 @@ ISR (SPI_STC_vect)
     
     //  //send back in next round
   }*/
-  //sei();
+  sei();
 }  
 
 void loop (void)
