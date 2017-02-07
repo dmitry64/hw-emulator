@@ -7,8 +7,11 @@ volatile byte selectedRegister;
 volatile byte selectedLength;
 volatile byte selectedMode;
 volatile byte currentByte;
-volatile unsigned short currentLongByte;
+volatile unsigned int currentLongByte;
 volatile byte currentWriteByte;
+
+volatile byte ascanCounter;
+
 
 struct tact{
 	volatile byte CR;
@@ -52,7 +55,7 @@ volatile byte tvg_c8[150];
 
 void ss_rising ()
 {
-	cli();	
+	cli();
 	if(state == S_BODY_R_L || state == S_BODY_W_L)
 	if( currentLongByte > 255 ) {
 		state = S_HEAD_COM;
@@ -72,6 +75,7 @@ void setup (void)
   selectedLength = 0;
   selectedRegister = 0;
   selectedMode = 0;
+  ascanCounter = 0;
   state = S_HEAD_COM;
   rxByte = 0;
   
@@ -101,14 +105,34 @@ void setup (void)
   attachInterrupt (1, ss_rising, RISING);
 }  // end of setup
 
+inline byte getAscanHeader(){
+	return 0xCC;
+}
+
+inline byte getAscanBody(){
+	return 0xBB;
+}
+
 inline byte getAscanByte(){
-	if(currentLongByte == 798)
-		return 0xDE;
+	if(currentLongByte < 12) {
+		return getAscanHeader();
+	} else {
+		return getAscanBody();
+	}
+	/*if(currentLongByte == 798)
+		return 0xFF;
 	else if (currentLongByte == 799)
 		return 0xAC;
-	else
-		return 0xA5;
+	else {
+		ascanCounter++;
+		//int val = rand();
+		return currentLongByte + ascanCounter;
+	}*/
 }
+
+
+
+
 
 inline void sendSelectedByte(){
 	switch(selectedRegister) {
@@ -330,9 +354,6 @@ ISR (SPI_STC_vect)
 			state = S_HEAD_COM;
 		}
 	break;
-	
-	
-	
 	default:
 		SPDR = 0xCC;
 	break;
